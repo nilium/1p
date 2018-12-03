@@ -20,13 +20,13 @@ session_refresh() {
       return 0
     fi
   fi
-  touch "$f"
   text="$(op signin "$name")"
   if [ -z "$text" ]; then
-    rm "$f"
+    rm -f "$f"
     return 1
   fi
   eval "$(echo "$text" | tee "$f")"
+  chmod 600 "$f"
   return 0
 }
 export -f session_refresh
