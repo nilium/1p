@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Usage: 1p [ACCOUNT...]
 
 export op1p_session_dir="$HOME/.op/.sessions"
 mkdir -p "$op1p_session_dir"
