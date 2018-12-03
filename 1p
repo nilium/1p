@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: 1p [ACCOUNT...]
+# Usage: 1p [-j|-p|-c|-b] [ACCOUNT...]
 
 export op1p_session_dir="$HOME/.op/.sessions"
 mkdir -p "$op1p_session_dir"
@@ -9,6 +9,22 @@ have_session() {
   [[ ":$(env | fex '=1 /^OP_SESSION_/_-1' | tr -s ' \n' ':'):" = *":${1}:"* ]]
 }
 export -f have_session
+
+auth_type=human
+case "$1" in
+-b) # Basic authentication
+  auth_type=basic;;
+-p) # Print password
+  auth_type=password;;
+-c) # Print name:password
+  auth_type=userpass;;
+-j) # Print item JSON
+  auth_type=json;;
+esac
+
+if [[ "$auth_type" != human ]]; then
+  shift
+fi
 
 session_refresh() {
   local name="$1"
@@ -21,7 +37,7 @@ session_refresh() {
     fi
   fi
   text="$(op signin "$name")"
-  if [ -z "$text" ]; then
+  if [[ -z "$text" ]]; then
     rm -f "$f"
     return 1
   fi
@@ -31,7 +47,7 @@ session_refresh() {
 }
 export -f session_refresh
 
-if [ -n "$1" ]; then
+if [[ -n "$1" ]]; then
   session=("$1")
   shift
 else
@@ -55,7 +71,7 @@ sel="$(
   fzf --preview="op get item --account={1} {3} | jq 'del(.details)'" -d $'\t'
 )"
 
-if [ -z "$sel" ]; then
+if [[ -z "$sel" ]]; then
   exit 0
 fi
 
@@ -67,14 +83,41 @@ query() {
 }
 
 printf $'\r'
-# Username
-query -r '.details.fields[] | select(.type == "T" and .designation == "username").value'
-# Password
-query -r '.details.fields[] | select(.type == "P" and .designation == "password").value' | pbcopy
-# TOTP
-if [[ -n "$(command -v gen-totp)" ]]; then
-  totpuri="$(query -r '[.details.sections[].fields[]] | map(select(.v | startswith("otpauth://"))) | first.v')"
-  if [ -n "$totpuri" ]; then
-    echo "OTP: $(gen-totp "$totpuri")"
+
+case $auth_type in
+human)
+  # Username
+  query -r '.details.fields[] | select(.type == "T" and .designation == "username").value'
+  # Password
+  query -r '.details.fields[] | select(.type == "P" and .designation == "password").value' | pbcopy
+  # TOTP
+  if [[ -n "$(command -v gen-totp)" ]]; then
+    totpuri="$(query -r '[.details.sections[].fields[]] | map(select(.v | startswith("otpauth://"))) | first.v')"
+    if [[ -n "$totpuri" ]]; then
+      echo "OTP: $(gen-totp "$totpuri")"
+    fi
   fi
-fi
+  ;;
+
+userpass)
+  query -r '.details.fields |
+    (.[] | select(.type == "T" and .designation == "username").value) as $user |
+    (.[] | select(.type == "P" and .designation == "password").value) as $pass |
+    [$user, $pass] | map(select(. != "")) | join(":")'
+  ;;
+
+password)
+  query -r '.details.fields[] | select(.type == "P" and .designation == "password").value'
+  ;;
+
+basic)
+  query -r '.details.fields |
+    (.[] | select(.type == "T" and .designation == "username").value) as $user |
+    (.[] | select(.type == "P" and .designation == "password").value) as $pass |
+    [$user, $pass] | map(select(. != "")) | join(":") | @base64'
+  ;;
+
+json)
+  query .
+  ;;
+esac
