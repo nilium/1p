@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+export op1p_session_dir="$HOME/.op/.sessions"
+mkdir -p "$op1p_session_dir"
+chmod 700 "$op1p_session_dir"
+
+have_session() {
+  [[ ":$(env | fex '=1 /^OP_SESSION_/_-1' | tr -s ' \n' ':'):" = *":${1}:"* ]]
+}
+export -f have_session
+
+session_refresh() {
+  local name="$1"
+  local max_age="${2:-1500}"
+  local f="$op1p_session_dir/$1"
+  if [[ -f "$f" ]]; then
+    . "$f"
+    if have_session "$name" && [[ $(($(date +%s) - $(date -r "$f" +%s))) -le $max_age ]]; then
+      return 0
+    fi
+  fi
+  touch "$f"
+  text="$(op signin "$name")"
+  if [ -z "$text" ]; then
+    rm "$f"
+    return 1
+  fi
+  eval "$(echo "$text" | tee "$f")"
+  return 0
+}
+export -f session_refresh
+
+if [ -n "$1" ]; then
+  session=("$1")
+  shift
+else
+  session=($(jq -r '.accounts[].shorthand' "$HOME/.op/config"))
+fi
+
+# Refresh sessions
+for sn in "${session[@]}"; do
+  if ! session_refresh "$sn"; then
+    echo "Session unavailable: $sn" 1>&2
+  else
+    . "$op1p_session_dir/$sn"
+  fi
+done
+
+sel="$(
+  for sn in "${session[@]}"; do
+    op list items --account="$sn" |
+      jq --arg sn "$sn" -r '.[] | "\($sn)\t\(.uuid)\t\(.overview.title)"'
+  done |
+  fzf --preview="op get item --account={1} {3} | jq 'del(.details)'" -d $'\t'
+)"
+
+if [ -z "$sel" ]; then
+  exit 0
+fi
+
+sn="$(printf '%s' "$sel" | fex $'\t1')"
+uuid="$(printf '%s' "$sel" | fex $'\t2')"
+json="$(op get item --account="$sn" "$uuid")"
+query() {
+  printf '%s' "$json" | jq "$@"
+}
+
+printf $'\r'
+# Username
+query -r '.details.fields[] | select(.type == "T" and .designation == "username").value'
+# Password
+query -r '.details.fields[] | select(.type == "P" and .designation == "password").value' | pbcopy
+# TOTP
+if [[ -n "$(command -v gen-totp)" ]]; then
+  totpuri="$(query -r '[.details.sections[].fields[]] | map(select(.v | startswith("otpauth://"))) | first.v')"
+  if [ -n "$totpuri" ]; then
+    echo "OTP: $(gen-totp "$totpuri")"
+  fi
+fi
