@@ -30,19 +30,19 @@ session_refresh() {
   local name="$1"
   local max_age="${2:-1500}"
   local f="$op1p_session_dir/$1"
-  if [[ -f "$f" ]]; then
+  if [[ -r "$f" ]]; then
     . "$f"
     if have_session "$name" && [[ $(($(date +%s) - $(date -r "$f" +%s))) -le $max_age ]]; then
       return 0
     fi
+    rm -f "$f"
   fi
   text="$(op signin "$name")"
   if [[ -z "$text" ]]; then
-    rm -f "$f"
     return 1
   fi
-  eval "$(echo "$text" | tee "$f")"
-  chmod 600 "$f"
+  echo "$text" | install -m 600 /dev/stdin "$f"
+  . "$f"
   return 0
 }
 export -f session_refresh
