@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Usage: 1p [-1] [-H|-u|-p|-o|-c|-b|-U|-j] [ACCOUNT] [QUERY...]
 
+# Requires:
+# - op: https://support.1password.com/command-line-getting-started/
+# - jq: https://stedolan.github.io/jq/
+# - fzf: https://github.com/junegunn/fzf
+# - fex: https://github.com/jordansissel/fex
+# - pbcopy: The OS X clipboard tool.
+#   Can be created as a script on Linux as:
+#      #!/usr/bin/env bash
+#      xsel -i -b && xsel -o -b | xsel -i -p
+
 if [[ "$1" = -h ]] || [[ "$1" == --help ]]; then
   cat <<EOF 1>&2
 Usage: 1p [-h|--help] [-1] [-b|-p|-c|-u|-o|-U|-j] [ACCOUNT] [QUERY...]
