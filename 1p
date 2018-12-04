@@ -10,6 +10,8 @@
 #   Can be created as a script on Linux as:
 #      #!/usr/bin/env bash
 #      xsel -i -b && xsel -o -b | xsel -i -p
+# - gen-totp: Any program that takes an otpauth:// URI as its first
+#   argument and prints a TOTP.
 
 if [[ "$1" = -h ]] || [[ "$1" == --help ]]; then
   cat <<EOF 1>&2
@@ -29,7 +31,7 @@ FORMATS
         to the clipboard using pbcopy.
 -u      Username.
 -p      Password.
--o      OTP (requires a gen-otp tool that accepts an otpauth:// URI).
+-o      OTP (requires a gen-totp tool that accepts an otpauth:// URI).
 -c      Username:password (colon-separated).
 -b      Basic authentication. Used in HTTP authentication.
 -U      1Password item UUID.
