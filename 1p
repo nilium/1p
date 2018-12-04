@@ -1,5 +1,32 @@
 #!/usr/bin/env bash
-# Usage: 1p [-j|-p|-c|-b] [ACCOUNT] [QUERY...]
+# Usage: 1p [-1] [-H|-u|-p|-o|-c|-b|-U|-j] [ACCOUNT] [QUERY...]
+
+if [[ "$1" = -h ]] || [[ "$1" == --help ]]; then
+  cat <<EOF 1>&2
+Usage: 1p [-h|--help] [-1] [-b|-p|-c|-u|-o|-U|-j] [ACCOUNT] [QUERY...]
+
+Searches a 1Password account (or all known accounts) for an item and
+formats the item's username, password, and OTP (optional).
+
+If -1 is passed, 1p will return as soon as it's found a match instead of
+presenting an interactive fzf window. This must be the first argument.
+
+In addition, you can pass a format specifier before the account name. By
+default, the formatter is -H (clipboard).
+
+FORMATS
+-H      Print the username (and OTP, if possible) and copy the password
+        to the clipboard using pbcopy.
+-u      Username.
+-p      Password.
+-o      OTP (requires a gen-otp tool that accepts an otpauth:// URI).
+-c      Username:password (colon-separated).
+-b      Basic authentication. Used in HTTP authentication.
+-U      1Password item UUID.
+-j      Raw JSON.
+EOF
+  exit 2
+fi
 
 export op1p_session_dir="$HOME/.op/.sessions"
 mkdir -p "$op1p_session_dir"
@@ -10,19 +37,35 @@ have_session() {
 }
 export -f have_session
 
-auth_type=human
+immediate=0
+if [[ "$1" = -1 ]]; then
+  # Do not start fzf interactively
+  immediate=1
+  shift
+fi
+
+auth_type=clipboard
 case "$1" in
+-H) # Clipboard auth (mostly-human)
+  shift
+  auth_type=clipboard;;
 -b) # Basic authentication
   auth_type=basic;;
 -p) # Print password
   auth_type=password;;
 -c) # Print name:password
   auth_type=userpass;;
+-u) # Print username
+  auth_type=user;;
+-o) # Print TOTP
+  auth_type=totp;;
+-U) # Print UUID
+  auth_type=uuid;;
 -j) # Print item JSON
   auth_type=json;;
 esac
 
-if [[ "$auth_type" != human ]]; then
+if [[ "$auth_type" != clipboard ]]; then
   shift
 fi
 
@@ -54,8 +97,14 @@ else
   session=($(jq -r '.accounts[].shorthand' "$HOME/.op/config"))
 fi
 
-if [ $# -gt 0 ]; then
-  set -- -q "$*"
+query="$*"
+set --
+if [[ -n "$query" ]]; then
+  if [[ $immediate = 0 ]]; then
+    set -- -q "$query"
+  else
+    set -- -f "$query"
+  fi
 fi
 
 # Refresh sessions
@@ -75,50 +124,78 @@ sel="$(
   fzf --preview="op get item --account={1} {3} | jq 'del(.details)'" -d $'\t' "$@"
 )"
 
+sel="$(printf '%s' "$sel" | head -n1)"
 if [[ -z "$sel" ]]; then
   exit 0
 fi
 
-sn="$(printf '%s' "$sel" | fex $'\t1')"
-uuid="$(printf '%s' "$sel" | fex $'\t2')"
+sn="$(printf '%s' "$sel" | fex $' 1\t1')"
+uuid="$(printf '%s' "$sel" | fex $' 1\t2')"
+if [[ "$auth_type" = uuid ]]; then
+  echo $uuid
+  exit 0
+fi
+
 json="$(op get item --account="$sn" "$uuid")"
 query() {
-  printf '%s' "$json" | jq "$@"
+  printf '%s' "$json" | jq -r "$@"
+}
+
+withuserpass() {
+  query '.details |
+    ([
+      ((.fields // [])[] | select(.type == "T" and .designation == "username").value)
+     ] | first // "") as $user |
+    ([
+      ((.fields // [])[] | select(.type == "P" and .designation == "password").value),
+      (.password // "")
+    ] | map(select(. != "")) | first // "") as $pass |
+    '"$*"
+}
+
+totp() {
+  if [[ -z "$(command -v gen-totp)" ]]; then
+    return 2
+  fi
+  totpuri="$(query '[.details.sections[] | (.fields // [])[]] | map(select(.v | startswith("otpauth://"))) | first.v | select((. != "") and (. != null))')"
+  if [[ -z "$totpuri" ]]; then
+    return 1
+  fi
+  echo "$(gen-totp "$totpuri")"
 }
 
 printf $'\r'
-
 case $auth_type in
-human)
+clipboard)
   # Username
-  query -r '.details.fields[] | select(.type == "T" and .designation == "username").value'
+  withuserpass '$user'
   # Password
-  query -r '.details.fields[] | select(.type == "P" and .designation == "password").value' | pbcopy
+  withuserpass '$pass' | pbcopy
   # TOTP
-  if [[ -n "$(command -v gen-totp)" ]]; then
-    totpuri="$(query -r '[.details.sections[].fields[]] | map(select(.v | startswith("otpauth://"))) | first.v')"
-    if [[ -n "$totpuri" ]]; then
-      echo "OTP: $(gen-totp "$totpuri")"
-    fi
+  otp="$(totp)"
+  if otp="$(totp)"; then
+    echo "OTP: $otp"
   fi
   ;;
 
 userpass)
-  query -r '.details.fields |
-    (.[] | select(.type == "T" and .designation == "username").value) as $user |
-    (.[] | select(.type == "P" and .designation == "password").value) as $pass |
-    [$user, $pass] | map(select(. != "")) | join(":")'
+  withuserpass '[$user, $pass] | map(select(. != "")) | join(":")'
+  ;;
+
+user)
+  withuserpass '$user'
+  ;;
+
+totp)
+  totp
   ;;
 
 password)
-  query -r '.details.fields[] | select(.type == "P" and .designation == "password").value'
+  withuserpass '$pass'
   ;;
 
 basic)
-  query -r '.details.fields |
-    (.[] | select(.type == "T" and .designation == "username").value) as $user |
-    (.[] | select(.type == "P" and .designation == "password").value) as $pass |
-    [$user, $pass] | map(select(. != "")) | join(":") | @base64'
+  withuserpass '[$user, $pass] | map(select(. != "")) | join(":") | @base64'
   ;;
 
 json)
