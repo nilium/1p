@@ -56,10 +56,9 @@ if [[ "$1" = -1 ]]; then
   shift
 fi
 
-auth_type=clipboard
+auth_type=
 case "$1" in
 -H) # Clipboard auth (mostly-human)
-  shift
   auth_type=clipboard;;
 -b) # Basic authentication
   auth_type=basic;;
@@ -77,9 +76,10 @@ case "$1" in
   auth_type=json;;
 esac
 
-if [[ "$auth_type" != clipboard ]]; then
+if [[ -n "$auth_type" ]]; then
   shift
 fi
+: ${auth_type:=clipboard}
 
 session_refresh() {
   local name="$1"
