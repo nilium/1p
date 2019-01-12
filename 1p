@@ -173,7 +173,7 @@ sel="$(
     op list items --account="$sn" |
       jq --arg sn "$sn" -r '.[] | "\($sn)\t\(.uuid)\t\(.overview.title)"'
   done |
-  fzf --preview="op get item --account={1} {3} | jq 'del(.details)'" -d $'\t' "$@"
+  fzf --preview="op get item --account={1} {2} | jq 'del(.details)'" -d $'\t' "$@"
 )"
 
 sel="$(printf '%s' "$sel" | head -n1)"
