@@ -26,10 +26,7 @@
 # - jq: https://stedolan.github.io/jq/
 # - fzf: https://github.com/junegunn/fzf
 # - fex: https://github.com/jordansissel/fex
-# - pbcopy: The OS X clipboard tool.
-#   Can be created as a script on Linux as:
-#      #!/usr/bin/env bash
-#      xsel -i -b && xsel -o -b | xsel -i -p
+# - pbcopy or xclip: Clipboard tools.
 # - gen-totp: Any program that takes an otpauth:// URI as its first
 #   argument and prints a TOTP.
 
@@ -68,6 +65,23 @@ have_session() {
   [[ ":$(env | fex '=1 /^OP_SESSION_/_-1' | tr -s ' \n' ':'):" = *":${1}:"* ]]
 }
 export -f have_session
+
+have_command() {
+  command -v "$@" >/dev/null 2>&1
+}
+export -f have_command
+
+to_clipboard() {
+  if have_command pbcopy; then
+    pbcopy
+  elif have_command xclip; then
+    xclip -i -selection p && xclip -o -selection p | xclip -i -selection c
+  elif have_command xsel; then
+    xsel -i -p && xsel -o -p | xsel -i -b
+  else
+    cat
+  fi
+}
 
 immediate=0
 if [[ "$1" = -1 ]]; then
@@ -202,7 +216,7 @@ clipboard)
   # Username
   withuserpass '$user'
   # Password
-  withuserpass '$pass' | pbcopy
+  withuserpass '$pass' | to_clipboard
   # TOTP
   otp="$(totp)"
   if otp="$(totp)"; then
