@@ -28,6 +28,14 @@
 # - fex: https://github.com/jordansissel/fex
 # - pbcopy or xclip: Clipboard tools.
 
+# With the exception of op, which you must download yourself because
+# it's not open source, the necessary tools can be installed through
+# xbps:
+#
+#     # xbps-install jq fzf fex xclip
+#
+# Your distribution may have similar packages.
+
 if [[ "$1" = -h ]] || [[ "$1" == --help ]]; then
   cat <<EOF 1>&2
 Usage: 1p [-h|--help] [-1] [-b|-p|-c|-u|-o|-U|-j] [ACCOUNT] [QUERY...]
@@ -50,7 +58,7 @@ FORMATS
 -c      Username:password (colon-separated).
 -b      Basic authentication. Used in HTTP authentication.
 -U      1Password item UUID.
--j      Raw JSON.
+-j      1Password item JSON.
 EOF
   exit 2
 fi
